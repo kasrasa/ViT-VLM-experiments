@@ -1,5 +1,6 @@
 Vision Backbone Fine-Tuning Study on a Balanced Food101 Subset
 Project Goal
+---
 This notebook is a controlled learning experiment to understand how different pretrained vision backbones and fine-tuning strategies behave under limited compute.
 The original goal was not to reproduce the full Food101 benchmark. Instead, the goal was to answer practical ML engineering questions:
 How do pretrained ViT-style models behave when only the classifier head is trained?
@@ -15,8 +16,8 @@ Train split:      4,000 images
 Validation split: 1,000 images
 ```
 The validation split was used for epoch-level evaluation, checkpoint selection, model comparison, and final reporting in this notebook.
----
 Final Dataset Design
+---
 The dataset was changed to a balanced 20-class subset:
 ```python
 NUM_SELECTED_CLASSES = 20
@@ -33,6 +34,7 @@ Create a stratified train/validation split.
 Remap original Food101 class IDs to contiguous labels `0..19`.
 This fixed the sparsity problem and made per-class metrics meaningful.
 Label Remapping
+---
 Original Food101 labels are in the range:
 ```text
 0..100
