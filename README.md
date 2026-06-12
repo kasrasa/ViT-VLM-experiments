@@ -1,7 +1,5 @@
 # ViT-VLM-experiments
 
-I am testing different vision transformers and vision language models with different datasets for different tasks to see their performance
-
 ## Project Goal
 
 This notebook is a controlled learning experiment to understand how different pretrained vision backbones and fine-tuning strategies behave under limited compute.
