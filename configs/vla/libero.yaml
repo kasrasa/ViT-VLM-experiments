@@ -1,0 +1,81 @@
+seed: 42
+device: auto
+output_dir: outputs/vla/libero
+
+run:
+  - mean_action
+  - previous_action
+  - state_mlp
+  - gru
+  - task_gru
+  - image_gru
+  - smolvla_eval
+
+dataset:
+  repo_id: lerobot/libero
+  episode_key: episode_index
+  task_key: task_index
+  state_key: observation.state
+  action_key: action
+  image_keys:
+    - observation.images.image
+    - observation.images.image2
+
+split:
+  strategy: task_stratified_episode
+  train_fraction: 0.8
+  seed: 42
+  file: outputs/vla/libero/split.json
+  reuse_existing: true
+
+loader:
+  num_workers: 2
+  pin_memory: true
+
+experiments:
+  state_mlp:
+    epochs: 10
+    batch_size: 256
+    hidden_dim: 256
+    lr: 0.001
+    weight_decay: 0.0001
+
+  gru:
+    history_k: 2
+    epochs: 10
+    batch_size: 256
+    hidden_dim: 256
+    num_layers: 3
+    dropout: 0.2
+    lr: 0.001
+    weight_decay: 0.0001
+
+  task_gru:
+    history_k: 2
+    task_embedding_dim: 64
+    epochs: 10
+    batch_size: 256
+    hidden_dim: 256
+    num_layers: 3
+    dropout: 0.2
+    lr: 0.001
+    weight_decay: 0.0001
+
+  image_gru:
+    history_k: 2
+    epochs: 10
+    batch_size: 32
+    image_embedding_dim: 256
+    hidden_dim: 256
+    num_layers: 3
+    dropout: 0.2
+    lr: 0.001
+    weight_decay: 0.0001
+
+  smolvla_eval:
+    checkpoint: null
+    batch_size: 8
+    num_workers: 2
+    model_image_keys:
+      - observation.images.camera1
+      - observation.images.camera2
