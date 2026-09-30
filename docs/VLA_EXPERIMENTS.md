@@ -29,7 +29,7 @@ src/vit_vlm_experiments/vla/
 
 The split is deliberately simple:
 
-- `data.py`: LeRobot loading helpers, non-image caching, task-stratified episode split, normalization, temporal dataset wrappers.
+- `data.py`: LeRobot loading helpers, non-image caching, episode-level split strategies, normalization, temporal dataset wrappers.
 - `models/`: model definitions only.
 - `experiments/`: training/evaluation loops for each benchmark.
 - `metrics.py`: shared MAE/MSE and per-action-dimension metrics.
@@ -72,9 +72,14 @@ python scripts/run_vla_experiments.py   --config configs/vla/libero.yaml   --onl
 - `image_gru`
 - `smolvla_eval`
 
-## LIBERO split
+## Episode splits
 
-The default configuration uses a task-stratified, episode-level 80/20 split.
+The LIBERO configuration uses `task_stratified_episode` for an 80/20 split
+within each task. For a single-task dataset, set
+`split.strategy: episode_stratified_episode` to shuffle and split the unique
+episode IDs without using task IDs. Both strategies keep complete episodes
+together, use `split.train_fraction` and `split.seed`, and require at least one
+training and one validation episode overall.
 
 The generated episode IDs are saved to:
 
@@ -82,7 +87,10 @@ The generated episode IDs are saved to:
 outputs/vla/libero/split.json
 ```
 
-and reused so every policy sees the same train/validation episodes.
+and reused so every policy sees the same train/validation episodes. A saved
+split is regenerated when its strategy, train fraction, seed, or set of
+available episode IDs differs from the current configuration and data. Older
+split files without these settings are regenerated once.
 
 This avoids frame-level leakage and avoids accidentally giving some LIBERO tasks no validation episodes.
 
