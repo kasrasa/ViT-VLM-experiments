@@ -118,47 +118,119 @@ def task_stratified_episode_split(
     )
 
 
+def episode_stratified_episode_split(
+    episode_ids: np.ndarray,
+    train_fraction: float,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    episodes = np.unique(episode_ids)
+
+    if len(episodes) < 2:
+        raise ValueError(
+            "Cannot split a single episode into train/validation sets."
+        )
+
+    rng = np.random.default_rng(seed)
+    rng.shuffle(episodes)
+
+    n_train = int(train_fraction * len(episodes))
+    n_train = min(max(n_train, 1), len(episodes) - 1)
+
+    return episodes[:n_train], episodes[n_train:]
+
+
+# Each strategy declares the cache fields passed before the common settings.
+SPLIT_STRATEGIES = {
+    "task_stratified_episode": (
+        task_stratified_episode_split,
+        ("episode_ids", "task_ids"),
+    ),
+    "episode_stratified_episode": (
+        episode_stratified_episode_split,
+        ("episode_ids",),
+    ),
+}
+
+
+def _valid_episode_split(
+    train_episodes: np.ndarray,
+    val_episodes: np.ndarray,
+    available_episodes: np.ndarray,
+) -> bool:
+    return (
+        train_episodes.size > 0
+        and val_episodes.size > 0
+        and np.unique(train_episodes).size == train_episodes.size
+        and np.unique(val_episodes).size == val_episodes.size
+        and not np.intersect1d(train_episodes, val_episodes).size
+        and np.array_equal(
+            np.union1d(train_episodes, val_episodes),
+            available_episodes,
+        )
+    )
+
+
 def create_or_load_split(
     cache: dict,
     split_config: dict,
 ) -> dict:
+    strategy = split_config.get(
+        "strategy", "task_stratified_episode"
+    )
+    if strategy not in SPLIT_STRATEGIES:
+        raise ValueError(
+            f"Unsupported split strategy: {strategy}. "
+            f"Choose from: {', '.join(SPLIT_STRATEGIES)}"
+        )
+
+    train_fraction = float(split_config.get("train_fraction", 0.8))
+    if not 0 < train_fraction < 1:
+        raise ValueError("split.train_fraction must be between 0 and 1.")
+    seed = int(split_config.get("seed", 42))
+
     split_file = Path(split_config["file"])
     reuse_existing = bool(
         split_config.get("reuse_existing", True)
     )
+    episode_ids = np.asarray(cache["episode_ids"], dtype=np.int64)
+    available_episodes = np.unique(episode_ids)
+    settings = {
+        "strategy": strategy,
+        "train_fraction": train_fraction,
+        "seed": seed,
+    }
 
+    cached_split = None
     if split_file.exists() and reuse_existing:
         payload = json.loads(
             split_file.read_text(encoding="utf-8")
         )
-        train_episodes = np.asarray(
-            payload["train_episodes"],
-            dtype=np.int64,
-        )
-        val_episodes = np.asarray(
-            payload["val_episodes"],
-            dtype=np.int64,
-        )
-    else:
-        strategy = split_config.get(
-            "strategy",
-            "task_stratified_episode",
-        )
-        if strategy != "task_stratified_episode":
-            raise ValueError(
-                f"Unsupported split strategy: {strategy}"
+        if all(payload.get(key) == value for key, value in settings.items()):
+            train_episodes = np.asarray(
+                payload["train_episodes"], dtype=np.int64
             )
+            val_episodes = np.asarray(
+                payload["val_episodes"], dtype=np.int64
+            )
+            if _valid_episode_split(
+                train_episodes, val_episodes, available_episodes
+            ):
+                cached_split = (train_episodes, val_episodes)
 
-        train_episodes, val_episodes = (
-            task_stratified_episode_split(
-                cache["episode_ids"],
-                cache["task_ids"],
-                train_fraction=float(
-                    split_config.get("train_fraction", 0.8)
-                ),
-                seed=int(split_config.get("seed", 42)),
-            )
+    if cached_split is None:
+        split_fn, cache_keys = SPLIT_STRATEGIES[strategy]
+        train_episodes, val_episodes = split_fn(
+            *(cache[key] for key in cache_keys),
+            train_fraction=train_fraction,
+            seed=seed,
         )
+        if not _valid_episode_split(
+            train_episodes, val_episodes, available_episodes
+        ):
+            raise ValueError(
+                "The split must assign every episode exactly once "
+                "and include both train and validation episodes."
+            )
 
         split_file.parent.mkdir(
             parents=True,
@@ -167,37 +239,20 @@ def create_or_load_split(
         split_file.write_text(
             json.dumps(
                 {
-                    "train_episodes":
-                        train_episodes.tolist(),
-                    "val_episodes":
-                        val_episodes.tolist(),
+                    **settings,
+                    "train_episodes": train_episodes.tolist(),
+                    "val_episodes": val_episodes.tolist(),
                 },
                 indent=2,
             ),
             encoding="utf-8",
         )
+    else:
+        train_episodes, val_episodes = cached_split
 
-    overlap = (
-        set(train_episodes.tolist())
-        & set(val_episodes.tolist())
-    )
-    if overlap:
-        raise RuntimeError(
-            "Train/validation episode overlap detected."
-        )
-
-    train_indices = np.flatnonzero(
-        np.isin(
-            cache["episode_ids"],
-            train_episodes,
-        )
-    )
-    val_indices = np.flatnonzero(
-        np.isin(
-            cache["episode_ids"],
-            val_episodes,
-        )
-    )
+    train_mask = np.isin(episode_ids, train_episodes)
+    train_indices = np.flatnonzero(train_mask)
+    val_indices = np.flatnonzero(~train_mask)
 
     return {
         "train_episodes": train_episodes,
