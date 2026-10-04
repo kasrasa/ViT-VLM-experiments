@@ -175,16 +175,20 @@ def read_split_file(split_file: Path) -> dict:
             split_file.read_text(encoding="utf-8")
         )
     except json.JSONDecodeError as err:
+        # needs to log the error and move on without raising an exception
+        # this however needs to raise an exception after three consecutive failures to read
         print(f"Failed to parse split file: {split_file}")
     except FileNotFoundError as err:
+        # needs to log the error and move on without raising an exception
+        # this however needs to raise an exception after three consecutive failures to read
         print(f"Split file not found: {split_file}")
 
     required_keys = {"train_episodes", "val_episodes"}
     missing_keys = required_keys - payload.keys()
     if missing_keys:
-        raise ValueError(
-            f"Missing required keys in split file: {missing_keys}"
-        )
+        # needs to log the error and move on without raising an exception
+        # this however needs to raise an exception after three consecutive failures to read
+        print(f"Split file is missing required keys: {missing_keys}")
 
     return payload
 
@@ -212,6 +216,8 @@ def write_split_file(split_file: Path, payload: dict) -> None:
             encoding="utf-8",
         )
     except Exception as err:
+        # should log the error and move on without raising an exception
+        # this however needs to rais an exception after three consecutive failure to writes
         print(f"Failed to write split file: {split_file}")
     
 
@@ -247,7 +253,7 @@ def create_or_load_split(
 
     cached_split = None
     if split_file.exists() and reuse_existing:
-        payload = read_split_file(split_file)
+        payload = read_split_file(split_file) # if this fails it should move on until the function raises an error
         if all(payload.get(key) == value for key, value in settings.items()):
             train_episodes = np.asarray(
                 payload["train_episodes"], dtype=np.int64
@@ -275,6 +281,7 @@ def create_or_load_split(
                 "and include both train and validation episodes."
             )
 
+        # if this fails it should move on until the function raises an error
         write_split_file(
             split_file,
             payload = {

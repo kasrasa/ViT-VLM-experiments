@@ -64,11 +64,15 @@ def save_metrics(
     output_path: str | Path,
 ) -> None:
     output_path = Path(output_path)
+    # should log if an error occurs and move on without raising an exception
     output_path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
+    # should log if an error occurs and move on without raising an exception
+    # there should be some traceablity of the model and settings like the dataset information
+    # version of the model, hyperparameters, and any other relevant information should be included in the metrics file
     output_path.write_text(
         json.dumps(
             metrics,
