@@ -1,7 +1,3 @@
-# VLA experiments
-
-This branch extracts the robotics/VLA work from the notebook-style workflow into a small package that can be developed one experiment at a time.
-
 ## Structure
 
 ```text
@@ -108,6 +104,3 @@ The evaluation uses a DataLoader for image decoding and batched preprocessing/in
 
 It calls `predict_action_chunk()` and compares the first predicted action in the chunk with the recorded expert action. This keeps the offline metric comparable to the one-step GRU/MLP baselines.
 
-## Notes
-
-This branch is intentionally an offline benchmark pipeline. It does not include closed-loop simulation or ROS integration. That can remain a separate pipeline and connect to the trained policies later.

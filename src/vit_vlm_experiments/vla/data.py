@@ -169,6 +169,51 @@ def _valid_episode_split(
         )
     )
 
+def read_split_file(split_file: Path) -> dict:
+    try:
+        payload = json.loads(
+            split_file.read_text(encoding="utf-8")
+        )
+    except json.JSONDecodeError as err:
+        print(f"Failed to parse split file: {split_file}")
+    except FileNotFoundError as err:
+        print(f"Split file not found: {split_file}")
+
+    required_keys = {"train_episodes", "val_episodes"}
+    missing_keys = required_keys - payload.keys()
+    if missing_keys:
+        raise ValueError(
+            f"Missing required keys in split file: {missing_keys}"
+        )
+
+    return payload
+
+def write_split_file(split_file: Path, payload: dict) -> None:
+    try:
+        split_file.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+    except Exception as err:
+        raise IOError(
+            f"Failed to create directory for split file: {split_file.parent}"
+        ) from err
+
+    try:
+        split_file.write_text(
+            json.dumps(
+                {
+                    "settings": payload["settings"],
+                    "train_episodes": payload["train_episodes"].tolist(),
+                    "val_episodes": payload["val_episodes"].tolist(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except Exception as err:
+        print(f"Failed to write split file: {split_file}")
+    
 
 def create_or_load_split(
     cache: dict,
@@ -202,9 +247,7 @@ def create_or_load_split(
 
     cached_split = None
     if split_file.exists() and reuse_existing:
-        payload = json.loads(
-            split_file.read_text(encoding="utf-8")
-        )
+        payload = read_split_file(split_file)
         if all(payload.get(key) == value for key, value in settings.items()):
             train_episodes = np.asarray(
                 payload["train_episodes"], dtype=np.int64
@@ -232,20 +275,13 @@ def create_or_load_split(
                 "and include both train and validation episodes."
             )
 
-        split_file.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-        split_file.write_text(
-            json.dumps(
-                {
-                    **settings,
-                    "train_episodes": train_episodes.tolist(),
-                    "val_episodes": val_episodes.tolist(),
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+        write_split_file(
+            split_file,
+            payload = {
+                "settings": settings,
+                "train_episodes": train_episodes.tolist(),
+                "val_episodes": val_episodes.tolist(),
+            }
         )
     else:
         train_episodes, val_episodes = cached_split

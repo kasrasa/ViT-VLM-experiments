@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+import torch
 
 
 def load_config(path: str | Path) -> dict:
@@ -19,8 +20,6 @@ def load_config(path: str | Path) -> dict:
 def resolve_device(value: str) -> str:
     if value != "auto":
         return value
-
-    import torch
 
     if torch.cuda.is_available():
         return "cuda"
