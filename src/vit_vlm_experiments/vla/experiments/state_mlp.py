@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import torch
 from torch.utils.data import (
@@ -10,6 +12,9 @@ from ..data import (
 )
 from ..metrics import regression_metrics
 from ..models import StateMLP
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def run_state_mlp(
@@ -89,10 +94,12 @@ def run_state_mlp(
         ),
     )
 
-    for _ in range(
-        int(config.get("epochs", 10))
-    ):
+    epochs = int(config.get("epochs", 10))
+    LOGGER.info("State MLP: %d training frames, %d validation frames", len(train_indices), len(val_indices))
+    for epoch in range(1, epochs + 1):
         model.train()
+        total_loss = 0.0
+        trained_frames = 0
 
         for states, targets in loader:
             states = states.to(
@@ -114,6 +121,10 @@ def run_state_mlp(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            total_loss += loss.item() * len(states)
+            trained_frames += len(states)
+
+        LOGGER.info("State MLP epoch %d/%d: training MSE=%.6f", epoch, epochs, total_loss / trained_frames)
 
     val_states = (
         context.cache["states"][

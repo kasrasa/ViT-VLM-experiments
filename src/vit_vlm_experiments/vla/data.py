@@ -2,11 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 from pathlib import Path
+import time
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
+from .storage import atomic_write_text
+
+
+LOGGER = logging.getLogger(__name__)
+SPLIT_IO_ATTEMPTS = 3
 
 
 def build_non_image_cache(
@@ -169,57 +177,85 @@ def _valid_episode_split(
         )
     )
 
+class InvalidSplitFile(ValueError):
+    """A saved split cannot be parsed or has an invalid structure."""
+
+
+class SplitFileReadError(OSError):
+    """Reading a saved split failed after repeated I/O attempts."""
+
+
+def _check_split_payload(payload: object) -> None:
+    if not isinstance(payload, dict):
+        raise InvalidSplitFile("Expected a JSON object.")
+
+    missing = {"train_episodes", "val_episodes"} - payload.keys()
+    if missing:
+        raise InvalidSplitFile(f"Missing split keys: {sorted(missing)}")
+
+    if "settings" in payload and not isinstance(payload["settings"], dict):
+        raise InvalidSplitFile("Split settings must be an object.")
+
+    int64 = np.iinfo(np.int64)
+    for name in ("train_episodes", "val_episodes"):
+        values = payload[name]
+        if not isinstance(values, list) or any(
+            type(value) is not int or not int64.min <= value <= int64.max
+            for value in values
+        ):
+            raise InvalidSplitFile(f"{name} must be a list of episode IDs.")
+
+
 def read_split_file(split_file: Path) -> dict:
-    try:
-        payload = json.loads(
-            split_file.read_text(encoding="utf-8")
-        )
-    except json.JSONDecodeError as err:
-        # needs to log the error and move on without raising an exception
-        # this however needs to raise an exception after three consecutive failures to read
-        print(f"Failed to parse split file: {split_file}")
-    except FileNotFoundError as err:
-        # needs to log the error and move on without raising an exception
-        # this however needs to raise an exception after three consecutive failures to read
-        print(f"Split file not found: {split_file}")
+    """Read a saved split, retrying up to three times before reporting failure."""
+    for attempt in range(1, SPLIT_IO_ATTEMPTS + 1):
+        try:
+            payload = json.loads(split_file.read_text(encoding="utf-8"))
+            _check_split_payload(payload)
+            return payload
+        except (UnicodeDecodeError, json.JSONDecodeError, InvalidSplitFile) as exc:
+            LOGGER.warning(
+                "Invalid split file %s (read %d/%d): %s",
+                split_file, attempt, SPLIT_IO_ATTEMPTS, exc,
+            )
+            if attempt == SPLIT_IO_ATTEMPTS:
+                raise InvalidSplitFile(
+                    f"Invalid split file after {attempt} attempts: {split_file}"
+                ) from exc
+        except OSError as exc:
+            LOGGER.warning(
+                "Cannot read split file %s (read %d/%d): %s",
+                split_file, attempt, SPLIT_IO_ATTEMPTS, exc,
+            )
+            if attempt == SPLIT_IO_ATTEMPTS:
+                raise SplitFileReadError(
+                    f"Cannot read split file after {attempt} attempts: {split_file}"
+                ) from exc
+        time.sleep(0.05 * attempt)
 
-    required_keys = {"train_episodes", "val_episodes"}
-    missing_keys = required_keys - payload.keys()
-    if missing_keys:
-        # needs to log the error and move on without raising an exception
-        # this however needs to raise an exception after three consecutive failures to read
-        print(f"Split file is missing required keys: {missing_keys}")
+    raise AssertionError("The split reader exhausted its attempts.")
 
-    return payload
 
 def write_split_file(split_file: Path, payload: dict) -> None:
-    try:
-        split_file.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-    except Exception as err:
-        raise IOError(
-            f"Failed to create directory for split file: {split_file.parent}"
-        ) from err
+    """Atomically save a JSON-ready split, retrying I/O failures."""
+    serialized = json.dumps(payload, indent=2, allow_nan=False) + "\n"
+    for attempt in range(1, SPLIT_IO_ATTEMPTS + 1):
+        try:
+            atomic_write_text(split_file, serialized)
+        except OSError as exc:
+            LOGGER.warning(
+                "Cannot write split file %s (write %d/%d): %s",
+                split_file, attempt, SPLIT_IO_ATTEMPTS, exc,
+            )
+            if attempt == SPLIT_IO_ATTEMPTS:
+                raise OSError(
+                    f"Cannot save split file after {attempt} attempts: {split_file}"
+                ) from exc
+            time.sleep(0.05 * attempt)
+        else:
+            LOGGER.info("Saved episode split to %s", split_file)
+            return
 
-    try:
-        split_file.write_text(
-            json.dumps(
-                {
-                    "settings": payload["settings"],
-                    "train_episodes": payload["train_episodes"].tolist(),
-                    "val_episodes": payload["val_episodes"].tolist(),
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-    except Exception as err:
-        # should log the error and move on without raising an exception
-        # this however needs to rais an exception after three consecutive failure to writes
-        print(f"Failed to write split file: {split_file}")
-    
 
 def create_or_load_split(
     cache: dict,
@@ -253,18 +289,32 @@ def create_or_load_split(
 
     cached_split = None
     if split_file.exists() and reuse_existing:
-        payload = read_split_file(split_file) # if this fails it should move on until the function raises an error
-        if all(payload.get(key) == value for key, value in settings.items()):
-            train_episodes = np.asarray(
-                payload["train_episodes"], dtype=np.int64
-            )
-            val_episodes = np.asarray(
-                payload["val_episodes"], dtype=np.int64
-            )
-            if _valid_episode_split(
-                train_episodes, val_episodes, available_episodes
-            ):
-                cached_split = (train_episodes, val_episodes)
+        try:
+            payload = read_split_file(split_file)
+        except InvalidSplitFile:
+            LOGGER.warning("Regenerating malformed episode split %s", split_file)
+        except SplitFileReadError as exc:
+            if not isinstance(exc.__cause__, FileNotFoundError):
+                raise
+            LOGGER.warning("Split file disappeared; regenerating %s", split_file)
+        else:
+            # Existing flat-format split files remain readable.
+            saved_settings = payload.get("settings", payload)
+            if all(saved_settings.get(key) == value for key, value in settings.items()):
+                train_episodes = np.asarray(payload["train_episodes"], dtype=np.int64)
+                val_episodes = np.asarray(payload["val_episodes"], dtype=np.int64)
+                if _valid_episode_split(
+                    train_episodes, val_episodes, available_episodes
+                ):
+                    cached_split = (train_episodes, val_episodes)
+                    LOGGER.info("Reusing episode split from %s", split_file)
+                else:
+                    LOGGER.warning(
+                        "Saved split does not match current episodes; regenerating %s",
+                        split_file,
+                    )
+            else:
+                LOGGER.info("Split settings changed; regenerating %s", split_file)
 
     if cached_split is None:
         split_fn, cache_keys = SPLIT_STRATEGIES[strategy]
@@ -281,14 +331,13 @@ def create_or_load_split(
                 "and include both train and validation episodes."
             )
 
-        # if this fails it should move on until the function raises an error
         write_split_file(
             split_file,
-            payload = {
+            {
                 "settings": settings,
                 "train_episodes": train_episodes.tolist(),
                 "val_episodes": val_episodes.tolist(),
-            }
+            },
         )
     else:
         train_episodes, val_episodes = cached_split

@@ -1,3 +1,5 @@
+# VLA experiments
+
 ## Structure
 
 ```text
@@ -7,8 +9,10 @@ scripts/run_vla_experiments.py
 src/vit_vlm_experiments/vla/
   config.py
   data.py
+  logging_config.py
   metrics.py
   runner.py
+  storage.py
 
   models/
     mlp.py
@@ -29,6 +33,8 @@ The split is deliberately simple:
 - `models/`: model definitions only.
 - `experiments/`: training/evaluation loops for each benchmark.
 - `metrics.py`: shared MAE/MSE and per-action-dimension metrics.
+- `logging_config.py`: one console and rotating file logger for the VLA package.
+- `storage.py`: atomic writes for split and metrics JSON files.
 - `runner.py`: loads the dataset/cache/split once and runs the selected experiments.
 - YAML: controls which experiments run and their hyperparameters.
 
@@ -85,10 +91,28 @@ outputs/vla/libero/split.json
 
 and reused so every policy sees the same train/validation episodes. A saved
 split is regenerated when its strategy, train fraction, seed, or set of
-available episode IDs differs from the current configuration and data. Older
-split files without these settings are regenerated once.
+available episode IDs differs from the current configuration and data. Both
+older flat settings and newer nested `settings` files can be reused. Empty or
+malformed files are retried three times and then regenerated. Persistent read
+or write I/O failures stop the run after three attempts, so an unusable split
+cannot silently change the experiment's train and validation assignments.
 
 This avoids frame-level leakage and avoids accidentally giving some LIBERO tasks no validation episodes.
+
+## Logs and results
+
+The suite logs dataset preparation, split reuse, experiment progress, and errors
+to stderr and to `output_dir/run.log`. The log file rotates at 5 MB with two
+backups. Set `logging.level` to `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`;
+set `logging.file` to choose another path (or `null` to disable file logging).
+If the log file cannot be opened, console logging continues.
+
+Each experiment writes `output_dir/<experiment>.json`. Alongside its error
+metrics, the file records the experiment name, package version, dataset config,
+split settings and episode IDs, seed, device, model checkpoint (if any), and
+hyperparameters. A metrics write failure is logged and the suite continues.
+These files contain measurements and run details; the training loops do not
+save model weights.
 
 ## SmolVLA
 
@@ -103,4 +127,3 @@ experiments:
 The evaluation uses a DataLoader for image decoding and batched preprocessing/inference.
 
 It calls `predict_action_chunk()` and compares the first predicted action in the chunk with the recorded expert action. This keeps the offline metric comparable to the one-step GRU/MLP baselines.
-

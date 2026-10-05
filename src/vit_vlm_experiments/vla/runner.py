@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version
+import logging
 from pathlib import Path
 import random
 
@@ -13,7 +16,11 @@ from .data import (
     create_or_load_split,
 )
 from .experiments import EXPERIMENTS
+from .logging_config import configure_logging
 from .metrics import save_metrics
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,6 +60,7 @@ def build_context(
     dataset = LeRobotDataset(
         dataset_config["repo_id"]
     )
+    LOGGER.info("Loaded dataset %s (%d frames)", dataset_config["repo_id"], len(dataset))
 
     cache = build_non_image_cache(
         dataset,
@@ -69,6 +77,7 @@ def build_context(
             "task_key"
         ],
     )
+    LOGGER.info("Prepared non-image data for %d frames", len(cache["episode_ids"]))
 
     split = create_or_load_split(
         cache,
@@ -103,10 +112,42 @@ def experiment_config(
     )
 
 
+def experiment_metadata(context: ExperimentContext, name: str, params: dict) -> dict:
+    try:
+        package_version = version("vit-vlm-experiments")
+    except PackageNotFoundError:
+        package_version = None
+
+    split_config = context.config["split"]
+    return {
+        "experiment": name,
+        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "package_version": package_version,
+        "model": {
+            "name": name,
+            "implementation_version": package_version,
+            "checkpoint": params.get("checkpoint"),
+        },
+        "dataset": context.config["dataset"],
+        "loader": context.config.get("loader", {}),
+        "split": {
+            "strategy": split_config.get("strategy", "task_stratified_episode"),
+            "train_fraction": float(split_config.get("train_fraction", 0.8)),
+            "seed": int(split_config.get("seed", 42)),
+            "train_episodes": context.split["train_episodes"].tolist(),
+            "val_episodes": context.split["val_episodes"].tolist(),
+        },
+        "seed": int(context.config.get("seed", 42)),
+        "device": context.device,
+        "hyperparameters": params,
+    }
+
+
 def run_from_config(
     config: dict,
     only=None,
 ):
+    configure_logging(config)
     selected = (
         only
         if only
@@ -137,74 +178,40 @@ def run_from_config(
             "outputs/vla",
         )
     )
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    print(
-        f"Device: {context.device}"
-    )
-    print(
-        "Train episodes:",
-        len(
-            context.split[
-                "train_episodes"
-            ]
-        ),
-    )
-    print(
-        "Validation episodes:",
-        len(
-            context.split[
-                "val_episodes"
-            ]
-        ),
-    )
-    print(
-        "Train frames:",
-        len(
-            context.split[
-                "train_indices"
-            ]
-        ),
-    )
-    print(
-        "Validation frames:",
-        len(
-            context.split[
-                "val_indices"
-            ]
-        ),
+    LOGGER.info("Selected experiments: %s", ", ".join(selected))
+    LOGGER.info(
+        "Device: %s; train: %d episodes / %d frames; "
+        "validation: %d episodes / %d frames",
+        context.device,
+        len(context.split["train_episodes"]),
+        len(context.split["train_indices"]),
+        len(context.split["val_episodes"]),
+        len(context.split["val_indices"]),
     )
 
     results = {}
 
     for name in selected:
-        print(
-            f"\n=== {name} ==="
-        )
+        LOGGER.info("Starting experiment %s", name)
+
+        params = experiment_config(config, name)
 
         result = EXPERIMENTS[name](
             context,
-            experiment_config(
-                config,
-                name,
-            ),
+            params,
         )
         results[name] = result
 
-        save_metrics(
+        saved = save_metrics(
             result,
-            output_dir
-            / f"{name}.json",
+            output_dir / f"{name}.json",
+            metadata=experiment_metadata(context, name, params),
         )
 
-        print(
-            f"MAE: {result['mae']:.6f}"
-        )
-        print(
-            f"MSE: {result['mse']:.6f}"
+        LOGGER.info(
+            "Completed %s: MAE=%.6f MSE=%.6f%s",
+            name, result["mae"], result["mse"],
+            " (metrics file unavailable)" if not saved else "",
         )
 
     return results

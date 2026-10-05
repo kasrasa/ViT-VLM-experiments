@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -8,6 +10,9 @@ from ..data import (
     build_non_image_cache,
 )
 from ..metrics import regression_metrics
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def run_smolvla_eval(
@@ -139,6 +144,8 @@ def run_smolvla_eval(
         y_true,
         dtype=np.float32,
     )
+
+    LOGGER.info("Evaluating SmolVLA checkpoint %s on %d frames", checkpoint, len(y_true))
 
     policy.reset()
     preprocessor.reset()

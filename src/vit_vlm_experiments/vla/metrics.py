@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
+
+from .storage import atomic_write_text
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def regression_metrics(
@@ -62,21 +68,17 @@ def regression_metrics(
 def save_metrics(
     metrics: dict,
     output_path: str | Path,
-) -> None:
+    metadata: dict | None = None,
+) -> bool:
+    """Save metrics atomically; log disk failures and let the run continue."""
     output_path = Path(output_path)
-    # should log if an error occurs and move on without raising an exception
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    payload = {**metrics, "metadata": metadata} if metadata is not None else metrics
+    serialized = json.dumps(payload, indent=2, allow_nan=False) + "\n"
+    try:
+        atomic_write_text(output_path, serialized)
+    except OSError:
+        LOGGER.exception("Could not save metrics to %s; continuing", output_path)
+        return False
 
-    # should log if an error occurs and move on without raising an exception
-    # there should be some traceablity of the model and settings like the dataset information
-    # version of the model, hyperparameters, and any other relevant information should be included in the metrics file
-    output_path.write_text(
-        json.dumps(
-            metrics,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    LOGGER.info("Saved metrics to %s", output_path)
+    return True

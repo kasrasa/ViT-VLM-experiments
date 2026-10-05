@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -8,6 +10,9 @@ from ..data import (
 )
 from ..metrics import regression_metrics
 from ..models import ImageGRUActionPolicy
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _collate(batch):
@@ -174,10 +179,12 @@ def run_image_gru(
         ),
     )
 
-    for _ in range(
-        int(config.get("epochs", 10))
-    ):
+    epochs = int(config.get("epochs", 10))
+    LOGGER.info("Image GRU: %d training windows, %d validation windows", len(train_dataset), len(val_dataset))
+    for epoch in range(1, epochs + 1):
         model.train()
+        total_loss = 0.0
+        trained_windows = 0
 
         for batch in train_loader:
             sequence = batch[
@@ -207,6 +214,10 @@ def run_image_gru(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            total_loss += loss.item() * len(sequence)
+            trained_windows += len(sequence)
+
+        LOGGER.info("Image GRU epoch %d/%d: training MSE=%.6f", epoch, epochs, total_loss / trained_windows)
 
     y_true = []
     y_pred = []

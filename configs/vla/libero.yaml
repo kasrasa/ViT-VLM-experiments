@@ -2,6 +2,10 @@ seed: 42
 device: auto
 output_dir: outputs/vla/libero
 
+logging:
+  level: INFO
+  # Defaults to output_dir/run.log; set file to another path if needed.
+
 run:
   - mean_action
   - previous_action

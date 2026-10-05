@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 import yaml
 import torch
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def load_config(path: str | Path) -> dict:
@@ -14,6 +18,7 @@ def load_config(path: str | Path) -> dict:
     if not isinstance(config, dict):
         raise ValueError(f"Expected a YAML mapping in {path}")
 
+    LOGGER.info("Loaded configuration from %s", path)
     return config
 
 
