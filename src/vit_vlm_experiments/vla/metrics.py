@@ -10,6 +10,7 @@ from .storage import atomic_write_text
 
 
 LOGGER = logging.getLogger(__name__)
+WRITE_METRIC_ATTEMPTS = 3
 
 
 def regression_metrics(
@@ -26,6 +27,12 @@ def regression_metrics(
     )
 
     if y_true.shape != y_pred.shape:
+        LOGGER.error(
+            "Prediction/target shape mismatch: "
+            "%s vs %s",
+            y_pred.shape,
+            y_true.shape,
+        )
         raise ValueError(
             "Prediction/target shape mismatch: "
             f"{y_pred.shape} vs {y_true.shape}"
@@ -73,12 +80,21 @@ def save_metrics(
     """Save metrics atomically; log disk failures and let the run continue."""
     output_path = Path(output_path)
     payload = {**metrics, "metadata": metadata} if metadata is not None else metrics
-    serialized = json.dumps(payload, indent=2, allow_nan=False) + "\n"
-    try:
-        atomic_write_text(output_path, serialized)
-    except OSError:
-        LOGGER.exception("Could not save metrics to %s; continuing", output_path)
-        return False
+    for attempt in range(1, WRITE_METRIC_ATTEMPTS + 1):
+        try:
+            serialized = json.dumps(payload, indent=2, allow_nan=False) + "\n"
+            atomic_write_text(output_path, serialized)
+        except ValueError as exc:
+            LOGGER.exception(
+                "Could not serialize metrics to JSON (attempt %d/%d): %s",
+                attempt,
+                WRITE_METRIC_ATTEMPTS,
+                exc,
+            )
+            return False
+        except OSError:
+            LOGGER.exception("Could not save metrics to %s; continuing", output_path)
+            return False
 
     LOGGER.info("Saved metrics to %s", output_path)
     return True

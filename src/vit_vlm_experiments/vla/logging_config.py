@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 
-LOGGER_NAME = "vit_vlm_experiments.vla"
+LOGGER_NAME = "vla_experiments.vla"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 

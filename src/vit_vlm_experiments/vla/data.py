@@ -187,14 +187,14 @@ class SplitFileReadError(OSError):
 
 def _check_split_payload(payload: object) -> None:
     if not isinstance(payload, dict):
-        raise InvalidSplitFile("Expected a JSON object.")
+        return False
 
     missing = {"train_episodes", "val_episodes"} - payload.keys()
     if missing:
-        raise InvalidSplitFile(f"Missing split keys: {sorted(missing)}")
+        return False
 
     if "settings" in payload and not isinstance(payload["settings"], dict):
-        raise InvalidSplitFile("Split settings must be an object.")
+        return False
 
     int64 = np.iinfo(np.int64)
     for name in ("train_episodes", "val_episodes"):
@@ -203,7 +203,9 @@ def _check_split_payload(payload: object) -> None:
             type(value) is not int or not int64.min <= value <= int64.max
             for value in values
         ):
-            raise InvalidSplitFile(f"{name} must be a list of episode IDs.")
+            return False
+    
+    return True
 
 
 def read_split_file(split_file: Path) -> dict:
@@ -211,22 +213,18 @@ def read_split_file(split_file: Path) -> dict:
     for attempt in range(1, SPLIT_IO_ATTEMPTS + 1):
         try:
             payload = json.loads(split_file.read_text(encoding="utf-8"))
-            _check_split_payload(payload)
-            return payload
+            if _check_split_payload(payload):
+                return payload
+            else:
+                raise InvalidSplitFile(
+                    f"Split file is malformed: {split_file}"
+                )
         except (UnicodeDecodeError, json.JSONDecodeError, InvalidSplitFile) as exc:
-            LOGGER.warning(
-                "Invalid split file %s (read %d/%d): %s",
-                split_file, attempt, SPLIT_IO_ATTEMPTS, exc,
-            )
             if attempt == SPLIT_IO_ATTEMPTS:
                 raise InvalidSplitFile(
                     f"Invalid split file after {attempt} attempts: {split_file}"
                 ) from exc
         except OSError as exc:
-            LOGGER.warning(
-                "Cannot read split file %s (read %d/%d): %s",
-                split_file, attempt, SPLIT_IO_ATTEMPTS, exc,
-            )
             if attempt == SPLIT_IO_ATTEMPTS:
                 raise SplitFileReadError(
                     f"Cannot read split file after {attempt} attempts: {split_file}"
@@ -243,17 +241,13 @@ def write_split_file(split_file: Path, payload: dict) -> None:
         try:
             atomic_write_text(split_file, serialized)
         except OSError as exc:
-            LOGGER.warning(
-                "Cannot write split file %s (write %d/%d): %s",
-                split_file, attempt, SPLIT_IO_ATTEMPTS, exc,
-            )
             if attempt == SPLIT_IO_ATTEMPTS:
                 raise OSError(
                     f"Cannot save split file after {attempt} attempts: {split_file}"
                 ) from exc
             time.sleep(0.05 * attempt)
         else:
-            LOGGER.info("Saved episode split to %s", split_file)
+            LOGGER.debug("Saved episode split to %s", split_file)
             return
 
 

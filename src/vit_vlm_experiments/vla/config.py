@@ -16,9 +16,9 @@ def load_config(path: str | Path) -> dict:
         config = yaml.safe_load(handle)
 
     if not isinstance(config, dict):
+        LOGGER.error("Expected a YAML mapping in %s", path)
         raise ValueError(f"Expected a YAML mapping in {path}")
 
-    LOGGER.info("Loaded configuration from %s", path)
     return config
 
 
