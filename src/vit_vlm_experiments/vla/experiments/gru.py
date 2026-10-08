@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from ..data import (
     TemporalDataset,
@@ -138,46 +139,57 @@ def _train_and_evaluate(
     label = "Task GRU" if task_conditioned else "GRU"
     epochs = int(config.get("epochs", 10))
     LOGGER.info("%s: %d training windows, %d validation windows", label, len(train_dataset), len(val_dataset))
-    for epoch in range(1, epochs + 1):
+    epoch_progress = tqdm(range(1, epochs + 1), desc=label, unit="epoch")
+    for epoch in epoch_progress:
         model.train()
         total_loss = 0.0
         trained_windows = 0
 
-        for batch in train_loader:
-            sequence = batch[
-                "sequence"
-            ].to(context.device)
-            target = batch[
-                "action_norm"
-            ].to(context.device)
+        with tqdm(
+            train_loader, desc=f"{label} epoch {epoch}/{epochs}",
+            unit="batch", leave=False,
+        ) as batches:
+            for batch in batches:
+                sequence = batch[
+                    "sequence"
+                ].to(context.device)
+                target = batch[
+                    "action_norm"
+                ].to(context.device)
 
-            if task_conditioned:
-                prediction = model(
-                    sequence,
-                    batch["task_id"].to(
-                        context.device
-                    ),
+                if task_conditioned:
+                    prediction = model(
+                        sequence,
+                        batch["task_id"].to(
+                            context.device
+                        ),
+                    )
+                else:
+                    prediction = model(
+                        sequence
+                    )
+
+                loss = (
+                    torch.nn.functional
+                    .mse_loss(
+                        prediction,
+                        target,
+                    )
                 )
-            else:
-                prediction = model(
-                    sequence
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item() * len(sequence)
+                trained_windows += len(sequence)
+                batches.set_postfix(
+                    train_mse=f"{total_loss / trained_windows:.4f}",
+                    refresh=False,
                 )
 
-            loss = (
-                torch.nn.functional
-                .mse_loss(
-                    prediction,
-                    target,
-                )
-            )
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item() * len(sequence)
-            trained_windows += len(sequence)
-
-        LOGGER.info("%s epoch %d/%d: training MSE=%.6f", label, epoch, epochs, total_loss / trained_windows)
+        epoch_progress.set_postfix(
+            train_mse=f"{total_loss / trained_windows:.4f}"
+        )
 
     y_true = []
     y_pred = []

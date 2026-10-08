@@ -6,6 +6,7 @@ from torch.utils.data import (
     DataLoader,
     TensorDataset,
 )
+from tqdm.auto import tqdm
 
 from ..data import (
     make_normalization_stats,
@@ -96,35 +97,46 @@ def run_state_mlp(
 
     epochs = int(config.get("epochs", 10))
     LOGGER.info("State MLP: %d training frames, %d validation frames", len(train_indices), len(val_indices))
-    for epoch in range(1, epochs + 1):
+    epoch_progress = tqdm(range(1, epochs + 1), desc="State MLP", unit="epoch")
+    for epoch in epoch_progress:
         model.train()
         total_loss = 0.0
         trained_frames = 0
 
-        for states, targets in loader:
-            states = states.to(
-                context.device
-            )
-            targets = targets.to(
-                context.device
-            )
-
-            predictions = model(states)
-            loss = (
-                torch.nn.functional
-                .mse_loss(
-                    predictions,
-                    targets,
+        with tqdm(
+            loader, desc=f"State MLP epoch {epoch}/{epochs}",
+            unit="batch", leave=False,
+        ) as batches:
+            for states, targets in batches:
+                states = states.to(
+                    context.device
                 )
-            )
+                targets = targets.to(
+                    context.device
+                )
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item() * len(states)
-            trained_frames += len(states)
+                predictions = model(states)
+                loss = (
+                    torch.nn.functional
+                    .mse_loss(
+                        predictions,
+                        targets,
+                    )
+                )
 
-        LOGGER.info("State MLP epoch %d/%d: training MSE=%.6f", epoch, epochs, total_loss / trained_frames)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item() * len(states)
+                trained_frames += len(states)
+                batches.set_postfix(
+                    train_mse=f"{total_loss / trained_frames:.4f}",
+                    refresh=False,
+                )
+
+        epoch_progress.set_postfix(
+            train_mse=f"{total_loss / trained_frames:.4f}"
+        )
 
     val_states = (
         context.cache["states"][

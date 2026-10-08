@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from ..data import (
     ImageTemporalDataset,
@@ -181,43 +182,55 @@ def run_image_gru(
 
     epochs = int(config.get("epochs", 10))
     LOGGER.info("Image GRU: %d training windows, %d validation windows", len(train_dataset), len(val_dataset))
-    for epoch in range(1, epochs + 1):
+    epoch_progress = tqdm(range(1, epochs + 1), desc="Image GRU", unit="epoch")
+    for epoch in epoch_progress:
         model.train()
         total_loss = 0.0
         trained_windows = 0
 
-        for batch in train_loader:
-            sequence = batch[
-                "sequence"
-            ].to(context.device)
-            images = [
-                image.to(context.device)
-                for image
-                in batch["images"]
-            ]
-            target = batch[
-                "action_norm"
-            ].to(context.device)
+        with tqdm(
+            train_loader, desc=f"Image GRU epoch {epoch}/{epochs}",
+            unit="batch", leave=False,
+        ) as batches:
+            for batch in batches:
+                sequence = batch[
+                    "sequence"
+                ].to(context.device)
+                images = [
+                    image.to(context.device)
+                    for image
+                    in batch["images"]
+                ]
+                target = batch[
+                    "action_norm"
+                ].to(context.device)
 
-            prediction = model(
-                sequence,
-                images,
-            )
-            loss = (
-                torch.nn.functional
-                .mse_loss(
-                    prediction,
-                    target,
+                prediction = model(
+                    sequence,
+                    images,
                 )
-            )
+                loss = (
+                    torch.nn.functional
+                    .mse_loss(
+                        prediction,
+                        target,
+                    )
+                )
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item() * len(sequence)
-            trained_windows += len(sequence)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item() * len(sequence)
+                trained_windows += len(sequence)
+                batches.set_postfix(
+                    train_mse=f"{total_loss / trained_windows:.4f}",
+                    refresh=False,
+                )
 
-        LOGGER.info("Image GRU epoch %d/%d: training MSE=%.6f", epoch, epochs, total_loss / trained_windows)
+        epoch_progress.set_postfix(
+            train_mse=f"{total_loss / trained_windows:.4f}"
+        )
+
 
     y_true = []
     y_pred = []

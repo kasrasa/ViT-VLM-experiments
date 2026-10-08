@@ -101,9 +101,11 @@ This avoids frame-level leakage and avoids accidentally giving some LIBERO tasks
 
 ## Logs and results
 
-The suite logs dataset preparation, split reuse, experiment progress, and errors
-to stderr and to `output_dir/run.log`. The log file rotates at 5 MB with two
-backups. Set `logging.level` to `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`;
+The suite logs dataset preparation, split reuse, experiment start and completion,
+and errors to stderr and to `output_dir/run.log`. Training progress and the
+running training MSE appear in tqdm bars on the console, not in the log file.
+The log file rotates at 5 MB with two backups. Set `logging.level` to `DEBUG`,
+`INFO`, `WARNING`, `ERROR`, or `CRITICAL`;
 set `logging.file` to choose another path (or `null` to disable file logging).
 If the log file cannot be opened, console logging continues.
 
