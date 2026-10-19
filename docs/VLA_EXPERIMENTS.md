@@ -118,14 +118,20 @@ save model weights.
 
 ## SmolVLA
 
-`smolvla_eval` expects a fine-tuned checkpoint path:
+`smolvla_eval` uses the pretrained `lerobot/smolvla_base` model from Hugging Face
+without fine-tuning. Run it separately from the configured baseline suite:
 
-```yaml
-experiments:
-  smolvla_eval:
-    checkpoint: /path/to/checkpoint/pretrained_model
+```bash
+python scripts/run_vla_experiments.py --config configs/vla/libero.yaml --only smolvla_eval
 ```
 
-The evaluation uses a DataLoader for image decoding and batched preprocessing/inference.
+The `checkpoint` setting accepts either a Hugging Face model ID or a local
+`pretrained_model` directory. LeRobot downloads the model and its processors
+when given a Hub ID and reuses the Hugging Face cache on later runs. This
+cached pretrained model is not a fine-tuned checkpoint. To evaluate a future
+fine-tuned model, set `checkpoint` to its model ID or saved directory.
+
+The evaluation loads only the saved validation episodes, uses a DataLoader for
+image decoding, and batches preprocessing and inference.
 
 It calls `predict_action_chunk()` and compares the first predicted action in the chunk with the recorded expert action. This keeps the offline metric comparable to the one-step GRU/MLP baselines.
