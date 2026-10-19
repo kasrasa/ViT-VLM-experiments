@@ -118,33 +118,29 @@ save model weights.
 
 ## SmolVLA
 
-`smolvla_eval` needs a LIBERO-compatible policy: an 8-value state input and
-a 7-value action output. The notebook's evaluation cells load
-`VLA_CHECKPOINT` from a preceding `lerobot-train` output. The base model
-`lerobot/smolvla_base` declares a 6-value state and 6-value action, so
-loading it directly cannot produce the 7-value LIBERO action needed for
-the full-action MAE/MSE comparison.
+`smolvla_eval` loads `lerobot/smolvla_libero` directly from the Hugging Face Hub
+by default. This checkpoint declares an 8-value state, a 7-value action,
+and the two camera features used by `lerobot/libero`. Its saved
+preprocessor and postprocessor supply the corresponding normalization.
+The evaluation checks the state and action widths before inference and
+reports a clear error for incompatible checkpoints such as
+`lerobot/smolvla_base`, which declares 6-value state and action features.
 
-After training on the saved training episodes, set the checkpoint to its
-`pretrained_model` directory (or a compatible Hugging Face model ID):
-
-```yaml
-experiments:
-  smolvla_eval:
-    checkpoint: /path/to/checkpoints/last/pretrained_model
-```
-
-Run the evaluation with:
+Run it with:
 
 ```bash
 python scripts/run_vla_experiments.py --config configs/vla/libero.yaml --only smolvla_eval
 ```
 
-The published `lerobot/smolvla_libero` checkpoint has the LIBERO 8/7
-feature shapes and can be used to check the pipeline without training
-locally. It was trained on `lerobot/libero`, so its score on this
-project's split is not a held-out comparison against the baselines.
+The Hub checkpoint was trained on `lerobot/libero` without restricting its
+training to this project's saved training episodes. Its score here is an
+offline reconstruction measurement on recorded demonstrations, **not a
+held-out comparison** with the locally trained baselines. To make that
+comparison, fine-tune `lerobot/smolvla_base` on the saved training
+episodes and point `experiments.smolvla_eval.checkpoint` to the resulting
+`pretrained_model` directory.
 
 The evaluation loads the saved validation episodes, decodes images with
 a DataLoader, and compares the first predicted action of each chunk
-with the corresponding recorded expert action.
+with the corresponding recorded expert action. It does not measure
+closed-loop task success in a simulator.
