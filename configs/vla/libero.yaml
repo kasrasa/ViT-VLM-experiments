@@ -14,8 +14,8 @@ run:
   - task_gru
   - image_gru
 
-# Add smolvla_eval to the run list after setting
-# experiments.smolvla_eval.checkpoint below.
+# The pretrained SmolVLA baseline is opt-in: run --only smolvla_eval.
+# Its checkpoint can be a Hub model ID or a local pretrained_model directory.
 
 dataset:
   repo_id: lerobot/libero
@@ -79,7 +79,7 @@ experiments:
     weight_decay: 0.0001
 
   smolvla_eval:
-    checkpoint: null
+    checkpoint: lerobot/smolvla_base
     batch_size: 8
     num_workers: 2
     model_image_keys:
