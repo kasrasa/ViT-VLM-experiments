@@ -118,20 +118,33 @@ save model weights.
 
 ## SmolVLA
 
-`smolvla_eval` uses the pretrained `lerobot/smolvla_base` model from Hugging Face
-without fine-tuning. Run it separately from the configured baseline suite:
+`smolvla_eval` needs a LIBERO-compatible policy: an 8-value state input and
+a 7-value action output. The notebook's evaluation cells load
+`VLA_CHECKPOINT` from a preceding `lerobot-train` output. The base model
+`lerobot/smolvla_base` declares a 6-value state and 6-value action, so
+loading it directly cannot produce the 7-value LIBERO action needed for
+the full-action MAE/MSE comparison.
+
+After training on the saved training episodes, set the checkpoint to its
+`pretrained_model` directory (or a compatible Hugging Face model ID):
+
+```yaml
+experiments:
+  smolvla_eval:
+    checkpoint: /path/to/checkpoints/last/pretrained_model
+```
+
+Run the evaluation with:
 
 ```bash
 python scripts/run_vla_experiments.py --config configs/vla/libero.yaml --only smolvla_eval
 ```
 
-The `checkpoint` setting accepts either a Hugging Face model ID or a local
-`pretrained_model` directory. LeRobot downloads the model and its processors
-when given a Hub ID and reuses the Hugging Face cache on later runs. This
-cached pretrained model is not a fine-tuned checkpoint. To evaluate a future
-fine-tuned model, set `checkpoint` to its model ID or saved directory.
+The published `lerobot/smolvla_libero` checkpoint has the LIBERO 8/7
+feature shapes and can be used to check the pipeline without training
+locally. It was trained on `lerobot/libero`, so its score on this
+project's split is not a held-out comparison against the baselines.
 
-The evaluation loads only the saved validation episodes, uses a DataLoader for
-image decoding, and batches preprocessing and inference.
-
-It calls `predict_action_chunk()` and compares the first predicted action in the chunk with the recorded expert action. This keeps the offline metric comparable to the one-step GRU/MLP baselines.
+The evaluation loads the saved validation episodes, decodes images with
+a DataLoader, and compares the first predicted action of each chunk
+with the corresponding recorded expert action.
