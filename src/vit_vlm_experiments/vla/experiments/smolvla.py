@@ -125,6 +125,24 @@ def run_smolvla_eval(
     )
     policy.eval()
 
+    state_feature = policy.config.input_features.get("observation.state")
+    action_feature = policy.config.output_features.get("action")
+    state_shape = None if state_feature is None else tuple(state_feature.shape)
+    action_shape = None if action_feature is None else tuple(action_feature.shape)
+    dataset_state_shape = (cache["states"].shape[1],)
+    dataset_action_shape = (cache["actions"].shape[1],)
+    if (
+        state_shape != dataset_state_shape
+        or action_shape != dataset_action_shape
+    ):
+        raise ValueError(
+            f"SmolVLA checkpoint {checkpoint!r} expects state {state_shape} "
+            f"and action {action_shape}, but the dataset has state "
+            f"{dataset_state_shape} and action {dataset_action_shape}. "
+            "Choose a checkpoint trained for these LIBERO features "
+            "(for example, lerobot/smolvla_libero)."
+        )
+
     (
         preprocessor,
         postprocessor,
@@ -214,6 +232,12 @@ def run_smolvla_eval(
                 )
             )
 
+            if prediction.shape != (len(index_list), y_true.shape[1]):
+                raise ValueError(
+                    f"SmolVLA checkpoint {checkpoint!r} returned actions with "
+                    f"shape {tuple(prediction.shape)}; expected "
+                    f"({len(index_list)}, {y_true.shape[1]})."
+                )
             y_pred[index_list] = (
                 prediction
                 .detach()
