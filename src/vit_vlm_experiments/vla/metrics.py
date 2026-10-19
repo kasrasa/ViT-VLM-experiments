@@ -84,6 +84,8 @@ def save_metrics(
         try:
             serialized = json.dumps(payload, indent=2, allow_nan=False) + "\n"
             atomic_write_text(output_path, serialized)
+            LOGGER.info("Saved metrics to %s", output_path)
+            return True
         except ValueError as exc:
             LOGGER.exception(
                 "Could not serialize metrics to JSON (attempt %d/%d): %s",
@@ -97,6 +99,3 @@ def save_metrics(
             LOGGER.exception("Could not save metrics to %s; continuing", output_path)
             if attempt == WRITE_METRIC_ATTEMPTS:
                 return False
-
-    LOGGER.info("Saved metrics to %s", output_path)
-    return True

@@ -13,7 +13,6 @@ run:
   - gru
   - task_gru
   - image_gru
-  - smolvla_eval
 
 # Add smolvla_eval to the run list after setting
 # experiments.smolvla_eval.checkpoint below.
