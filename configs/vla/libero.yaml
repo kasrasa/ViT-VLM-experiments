@@ -14,8 +14,8 @@ run:
   - task_gru
   - image_gru
 
-# The pretrained SmolVLA baseline is opt-in: run --only smolvla_eval.
-# Its checkpoint can be a Hub model ID or a local pretrained_model directory.
+# SmolVLA evaluation is opt-in: run --only smolvla_eval after supplying a
+# LIBERO-compatible checkpoint. The base Hub model has different feature shapes.
 
 dataset:
   repo_id: lerobot/libero
@@ -79,7 +79,7 @@ experiments:
     weight_decay: 0.0001
 
   smolvla_eval:
-    checkpoint: lerobot/smolvla_base
+    checkpoint: null
     batch_size: 8
     num_workers: 2
     model_image_keys:
