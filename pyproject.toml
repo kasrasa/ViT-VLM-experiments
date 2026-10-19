@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-vla = ["lerobot[dataset]"]
+vla = ["lerobot[dataset,smolvla]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
