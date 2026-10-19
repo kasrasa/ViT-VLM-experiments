@@ -91,10 +91,12 @@ def save_metrics(
                 WRITE_METRIC_ATTEMPTS,
                 exc,
             )
-            return False
+            if attempt == WRITE_METRIC_ATTEMPTS:
+                return False
         except OSError:
             LOGGER.exception("Could not save metrics to %s; continuing", output_path)
-            return False
+            if attempt == WRITE_METRIC_ATTEMPTS:
+                return False
 
     LOGGER.info("Saved metrics to %s", output_path)
     return True

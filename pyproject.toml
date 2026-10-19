@@ -10,13 +10,12 @@ requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.24",
   "PyYAML>=6.0",
-  "torch>=2.1",
-  "torchvision>=0.16",
   "tqdm>=4.66",
+  "torchvision (<0.29)",
 ]
 
 [project.optional-dependencies]
-vla = ["lerobot"]
+vla = ["lerobot[dataset]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
