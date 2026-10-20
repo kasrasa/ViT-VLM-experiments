@@ -1,2 +1,7 @@
 # ViT-VLM-experiments
-I am testing different vision transformers and vision language models with different datasets for different tasks to see their performance
+
+Experiments for comparing vision transformers, vision-language models, and vision-language-action policies.
+
+The current refactor starts with the robotics/VLA notebook work.
+
+See [docs/VLA_EXPERIMENTS.md](docs/VLA_EXPERIMENTS.md) for the VLA package structure, configuration, and run commands.
