@@ -92,6 +92,7 @@ def run_image_gru(
         stats,
         history_k,
         image_keys,
+        target_indices=context.split["evaluation_indices"],
     )
 
     batch_size = int(
@@ -274,3 +275,4 @@ def run_image_gru(
             axis=0,
         ),
     )
+

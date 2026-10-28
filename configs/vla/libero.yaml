@@ -38,6 +38,11 @@ loader:
   num_workers: 2
   pin_memory: true
 
+# Score every model on frames with this much preceding episode history.
+# Keep this at least as large as every configured temporal model's history_k.
+evaluation:
+  history_k: 2
+
 experiments:
   state_mlp:
     epochs: 10
@@ -85,3 +90,4 @@ experiments:
     model_image_keys:
       - observation.images.camera1
       - observation.images.camera2
+

@@ -37,6 +37,8 @@ def regression_metrics(
             "Prediction/target shape mismatch: "
             f"{y_pred.shape} vs {y_true.shape}"
         )
+    if y_true.ndim != 2 or not all(y_true.shape):
+        raise ValueError("Metrics require nonempty (frames, action_dimensions) arrays.")
 
     error = y_true - y_pred
 
@@ -53,7 +55,8 @@ def regression_metrics(
         / np.maximum(target_scale, 1e-8)
     )
 
-    return {
+    result = {
+        "num_samples": len(y_true),
         "mae": float(
             np.mean(np.abs(error))
         ),
@@ -70,6 +73,11 @@ def regression_metrics(
             for i in range(y_true.shape[1])
         ],
     }
+    # LIBERO's seven actions: six end-effector motion commands, then gripper.
+    if y_true.shape[1] == 7:
+        result["motion_mae"] = float(np.mean(np.abs(error[:, :6])))
+        result["gripper_mae"] = float(per_dim_mae[6])
+    return result
 
 
 def save_metrics(
@@ -99,3 +107,4 @@ def save_metrics(
             LOGGER.exception("Could not save metrics to %s; continuing", output_path)
             if attempt == WRITE_METRIC_ATTEMPTS:
                 return False
+

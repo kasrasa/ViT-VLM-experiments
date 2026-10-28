@@ -49,6 +49,7 @@ def _train_and_evaluate(
         stats,
         history_k,
         include_task=task_conditioned,
+        target_indices=context.split["evaluation_indices"],
     )
 
     batch_size = int(
@@ -258,3 +259,4 @@ def run_task_gru(
         config,
         task_conditioned=True,
     )
+

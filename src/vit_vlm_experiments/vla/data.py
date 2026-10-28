@@ -420,6 +420,26 @@ def valid_temporal_indices(
     )
 
 
+def shared_validation_indices(cache: dict, split: dict, config: dict) -> np.ndarray:
+    """Use the same target frames even when a single experiment is selected."""
+    experiments = config.get("experiments", {})
+    required_history = max(
+        1,  # The previous-action baseline needs one preceding frame.
+        *(int(experiments.get(name, {}).get("history_k", 2))
+          for name in ("gru", "task_gru", "image_gru")),
+    )
+    history_k = config.get("evaluation", {}).get("history_k", required_history)
+    if type(history_k) is not int or history_k < required_history:
+        raise ValueError(
+            "evaluation.history_k must be an integer at least as large as "
+            f"every model's required history ({required_history})."
+        )
+    indices = valid_temporal_indices(cache, split["val_indices"], history_k)
+    if not len(indices):
+        raise ValueError("No shared validation frames have the required episode history.")
+    return indices
+
+
 class TemporalDataset(Dataset):
     def __init__(
         self,
@@ -428,6 +448,7 @@ class TemporalDataset(Dataset):
         stats: NormalizationStats,
         history_k: int,
         include_task: bool = False,
+        target_indices=None,
     ):
         self.cache = cache
         self.indices = valid_temporal_indices(
@@ -435,6 +456,11 @@ class TemporalDataset(Dataset):
             indices,
             history_k,
         )
+        if target_indices is not None:
+            targets = np.asarray(target_indices, dtype=np.int64)
+            if targets.ndim != 1 or not np.all(np.isin(targets, self.indices)):
+                raise ValueError("Validation target frames lack valid episode history.")
+            self.indices = targets
         self.stats = stats
         self.history_k = history_k
         self.include_task = include_task
@@ -527,6 +553,7 @@ class ImageTemporalDataset(TemporalDataset):
         history_k,
         image_keys,
         include_task: bool = False,
+        target_indices=None,
     ):
         super().__init__(
             cache,
@@ -534,6 +561,7 @@ class ImageTemporalDataset(TemporalDataset):
             stats,
             history_k,
             include_task=include_task,
+            target_indices=target_indices,
         )
         self.dataset = dataset
         self.image_keys = list(image_keys)
@@ -557,14 +585,20 @@ class SmolVLAImageDataset(Dataset):
         self,
         dataset,
         image_keys,
+        indices=None,
     ):
         self.dataset = dataset
         self.image_keys = list(image_keys)
+        self.indices = (
+            np.arange(len(dataset), dtype=np.int64)
+            if indices is None else np.asarray(indices, dtype=np.int64)
+        )
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.indices)
 
     def __getitem__(self, idx):
+        idx = int(self.indices[idx])
         sample = self.dataset[idx]
 
         result = {
@@ -575,3 +609,4 @@ class SmolVLAImageDataset(Dataset):
             result[key] = sample[key]
 
         return result
+

@@ -5,10 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from ..data import (
-    SmolVLAImageDataset,
-    build_non_image_cache,
-)
+from ..data import SmolVLAImageDataset
 from ..metrics import regression_metrics
 
 
@@ -29,9 +26,6 @@ def run_smolvla_eval(
             "checkpoint in the YAML config."
         )
 
-    from lerobot.datasets.lerobot_dataset import (
-        LeRobotDataset,
-    )
     from lerobot.policies.factory import (
         make_pre_post_processors,
     )
@@ -43,30 +37,14 @@ def run_smolvla_eval(
         context.config["dataset"]
     )
 
-    val_dataset = LeRobotDataset(
-        dataset_config["repo_id"],
-        episodes=(
-            context.split[
-                "val_episodes"
-            ].tolist()
-        ),
-    )
-
-    cache = build_non_image_cache(
-        val_dataset,
-        state_key=dataset_config[
-            "state_key"
-        ],
-        action_key=dataset_config[
-            "action_key"
-        ],
-        episode_key=dataset_config[
-            "episode_key"
-        ],
-        task_key=dataset_config[
-            "task_key"
-        ],
-    )
+    cache = context.cache
+    val_indices = context.split["evaluation_indices"]
+    if checkpoint == "lerobot/smolvla_libero" and dataset_config["repo_id"] == "lerobot/libero":
+        LOGGER.warning(
+            "lerobot/smolvla_libero was trained on LIBERO without this project's "
+            "episode split. The same validation frames will be scored, but its "
+            "result is not a held-out measurement."
+        )
 
     image_keys = dataset_config[
         "image_keys"
@@ -88,8 +66,9 @@ def run_smolvla_eval(
 
     image_dataset = (
         SmolVLAImageDataset(
-            val_dataset,
+            context.dataset,
             image_keys,
+            indices=val_indices,
         )
     )
 
@@ -157,7 +136,7 @@ def run_smolvla_eval(
         },
     )
 
-    y_true = cache["actions"]
+    y_true = cache["actions"][val_indices]
     y_pred = np.empty_like(
         y_true,
         dtype=np.float32,
@@ -169,6 +148,7 @@ def run_smolvla_eval(
     preprocessor.reset()
     postprocessor.reset()
 
+    processed_frames = 0
     with torch.inference_mode():
         for batch in tqdm(
             loader,
@@ -185,6 +165,9 @@ def run_smolvla_eval(
                 .cpu()
                 .tolist()
             )
+            batch_end = processed_frames + len(index_list)
+            if not np.array_equal(index_list, val_indices[processed_frames:batch_end]):
+                raise ValueError("SmolVLA images do not match the shared validation frame order.")
 
             raw_batch = {
                 "observation.state":
@@ -238,15 +221,20 @@ def run_smolvla_eval(
                     f"shape {tuple(prediction.shape)}; expected "
                     f"({len(index_list)}, {y_true.shape[1]})."
                 )
-            y_pred[index_list] = (
+            y_pred[processed_frames:batch_end] = (
                 prediction
                 .detach()
                 .cpu()
                 .numpy()
                 .astype(np.float32)
             )
+            processed_frames = batch_end
+
+    if processed_frames != len(y_true):
+        raise ValueError("SmolVLA did not predict every shared validation frame.")
 
     return regression_metrics(
         y_true,
         y_pred,
     )
+
