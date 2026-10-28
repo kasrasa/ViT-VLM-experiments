@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
+import hashlib
 import logging
 from pathlib import Path
 import random
@@ -14,6 +15,7 @@ from .config import resolve_device
 from .data import (
     build_non_image_cache,
     create_or_load_split,
+    shared_validation_indices,
 )
 from .experiments import EXPERIMENTS
 from .logging_config import configure_logging
@@ -83,6 +85,7 @@ def build_context(
         cache,
         config["split"],
     )
+    split["evaluation_indices"] = shared_validation_indices(cache, split, config)
 
     return ExperimentContext(
         config=config,
@@ -119,15 +122,24 @@ def experiment_metadata(context: ExperimentContext, name: str, params: dict) -> 
         package_version = None
 
     split_config = context.config["split"]
+    evaluation_indices = context.split["evaluation_indices"]
+    model_metadata = {
+        "name": name,
+        "implementation_version": package_version,
+        "checkpoint": params.get("checkpoint"),
+    }
+    if name == "smolvla_eval":
+        model_metadata["validation_exposure"] = (
+            "known_training_overlap"
+            if params.get("checkpoint") == "lerobot/smolvla_libero"
+            and context.config["dataset"]["repo_id"] == "lerobot/libero"
+            else "unverified"
+        )
     return {
         "experiment": name,
         "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         "package_version": package_version,
-        "model": {
-            "name": name,
-            "implementation_version": package_version,
-            "checkpoint": params.get("checkpoint"),
-        },
+        "model": model_metadata,
         "dataset": context.config["dataset"],
         "loader": context.config.get("loader", {}),
         "split": {
@@ -136,6 +148,15 @@ def experiment_metadata(context: ExperimentContext, name: str, params: dict) -> 
             "seed": int(split_config.get("seed", 42)),
             "train_episodes": context.split["train_episodes"].tolist(),
             "val_episodes": context.split["val_episodes"].tolist(),
+        },
+        "evaluation": {
+            "num_frames": len(evaluation_indices),
+            "excluded_initial_frames": len(context.split["val_indices"]) - len(evaluation_indices),
+            "frame_indices_sha256": hashlib.sha256(
+                np.asarray(evaluation_indices, dtype="<i8").tobytes()
+            ).hexdigest(),
+            "target_space": "original_dataset_actions",
+            "protocol": "offline_one_step_expert_history",
         },
         "seed": int(context.config.get("seed", 42)),
         "device": context.device,
@@ -188,6 +209,7 @@ def run_from_config(
         len(context.split["val_episodes"]),
         len(context.split["val_indices"]),
     )
+    LOGGER.info("All models will score the same %d validation frames", len(context.split["evaluation_indices"]))
 
     results = {}
 
@@ -200,6 +222,8 @@ def run_from_config(
             context,
             params,
         )
+        if result["num_samples"] != len(context.split["evaluation_indices"]):
+            raise ValueError(f"{name} did not score every shared validation frame.")
         results[name] = result
 
         saved = save_metrics(
@@ -215,3 +239,4 @@ def run_from_config(
         )
 
     return results
+

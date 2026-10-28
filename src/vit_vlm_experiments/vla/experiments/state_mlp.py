@@ -26,7 +26,7 @@ def run_state_mlp(
         context.split["train_indices"]
     )
     val_indices = (
-        context.split["val_indices"]
+        context.split["evaluation_indices"]
     )
 
     stats = make_normalization_stats(
@@ -183,3 +183,4 @@ def run_state_mlp(
             axis=0,
         ),
     )
+

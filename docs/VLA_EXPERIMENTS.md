@@ -99,6 +99,48 @@ cannot silently change the experiment's train and validation assignments.
 
 This avoids frame-level leakage and avoids accidentally giving some LIBERO tasks no validation episodes.
 
+## Shared validation frames
+
+Every model now scores the same global dataset frame indices. With the default
+`evaluation.history_k: 2`, the first two frames of each validation episode are
+excluded as prediction targets because temporal models need their history.
+Those frames remain available as context for later predictions. Training
+episodes and training windows are unchanged.
+
+The shared target set is independent of `--only`: running `smolvla_eval` alone
+uses the same frames as running the full suite. `evaluation.history_k` must
+cover the largest configured GRU history (and at least one preceding frame
+for `previous_action`). Temporal validation datasets retain the complete
+validation history, then select the shared targets; they do not drop the
+history twice. SmolVLA reads its images, states, tasks, and action targets
+from that same full dataset/cache using the shared global frame indices.
+
+Each metrics file includes `num_samples` and
+`metadata.evaluation.frame_indices_sha256`. Both must match across runs on
+the same dataset before comparing scores. Old metrics used different target
+frames, so rerun the experiments rather than combining old and new scores.
+The existing loops do not save local model weights, so local learned models
+must train again to obtain those new scores.
+
+This remains an offline one-step evaluation: temporal models receive recorded
+expert actions as their preceding history, not their own earlier predictions.
+
+### Motion and gripper MAE
+
+For LIBERO's seven-dimensional action vector, `motion_mae` averages absolute
+prediction errors across frames and action dimensions 0–5 (translation and
+rotation commands). `gripper_mae` averages absolute errors for dimension 6.
+Metrics are calculated after predictions have been returned to the original
+dataset action scale, not in the standardized training space. These are errors
+in control commands, not measured robot position errors or task success rates.
+
+Overall `mae` weights all seven dimensions equally:
+`mae = (6 * motion_mae + gripper_mae) / 7`. Separating the groups prevents a
+large gripper error from obscuring differences in motion prediction. The
+motion dimensions can also have different scales; inspect `per_dim` and
+`relative_mae` when interpreting them. The latter divides each dimension's
+MAE by that dimension's mean absolute target command.
+
 ## Logs and results
 
 The suite logs dataset preparation, split reuse, experiment start and completion,
@@ -140,7 +182,14 @@ comparison, fine-tune `lerobot/smolvla_base` on the saved training
 episodes and point `experiments.smolvla_eval.checkpoint` to the resulting
 `pretrained_model` directory.
 
+The known overlap is logged as a warning and recorded as
+`metadata.model.validation_exposure: known_training_overlap`. Other SmolVLA
+checkpoints are marked `unverified`; supplying a different checkpoint does not
+automatically establish that its training excluded these episodes. Matching
+validation frames does not remove information already learned during training.
+
 The evaluation loads the saved validation episodes, decodes images with
 a DataLoader, and compares the first predicted action of each chunk
 with the corresponding recorded expert action. It does not measure
 closed-loop task success in a simulator.
+

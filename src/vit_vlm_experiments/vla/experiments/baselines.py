@@ -14,7 +14,7 @@ def run_mean_action(
     )
     y_true = (
         context.cache["actions"][
-            context.split["val_indices"]
+            context.split["evaluation_indices"]
         ]
     )
 
@@ -47,18 +47,12 @@ def run_previous_action(
     y_pred = []
 
     for idx in (
-        context.split["val_indices"]
+        context.split["evaluation_indices"]
     ):
         idx = int(idx)
 
-        if idx == 0:
-            continue
-
-        if (
-            episode_ids[idx - 1]
-            != episode_ids[idx]
-        ):
-            continue
+        if idx == 0 or episode_ids[idx - 1] != episode_ids[idx]:
+            raise ValueError("Shared validation frame lacks its previous action.")
 
         y_true.append(actions[idx])
         y_pred.append(actions[idx - 1])
@@ -67,3 +61,4 @@ def run_previous_action(
         np.asarray(y_true),
         np.asarray(y_pred),
     )
+
